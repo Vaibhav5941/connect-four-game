@@ -178,10 +178,11 @@ def handle_move(data):
     if winner:
         game['winner'] = winner
         print(f'🏆 Winner: Player {winner}')
-    
-    # Switch player
-    game['currentPlayer'] = 2 if game['currentPlayer'] == 1 else 1
-    game['moveStartTime'] = time.time() if 'time' in __builtins__ else None
+    else:
+        game['winner'] = None
+        # Switch player only if no winner
+        game['currentPlayer'] = 2 if game['currentPlayer'] == 1 else 1
+        game['moveStartTime'] = time.time() if 'time' in __builtins__ else None
     
     # Get player names
     players_info = {

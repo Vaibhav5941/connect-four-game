@@ -298,6 +298,14 @@ const ConnectFour = () => {
           setPlayers(data.players);
         }
 
+        // Store game state for reconnection
+        setGameState({
+          board: data.board,
+          currentPlayer: data.currentPlayer,
+          winner: data.winner,
+          players: data.players
+        });
+
         if (data.winner) {
           const result = checkWinnerLocal(data.board);
           if (result) {
@@ -316,6 +324,14 @@ const ConnectFour = () => {
         setWinner(data.winner);
         setWinningCells([]);
         setLastMove(null);
+        setRematchPending(false);
+        setRematchRequested(false);
+        // Store game state for reconnection
+        setGameState({
+          board: data.board,
+          currentPlayer: data.currentPlayer,
+          winner: data.winner
+        });
       });
 
       newSocket.on('error', (data) => {
