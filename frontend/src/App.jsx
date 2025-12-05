@@ -324,6 +324,43 @@ const ConnectFour = () => {
         soundManager.playError();
       });
 
+      newSocket.on('rematch_requested', (data) => {
+        console.log('🔄 Rematch requested:', data);
+        setRematchPending(true);
+        showMessage(`${data.playerName || 'Opponent'} requested a rematch!`);
+      });
+
+      newSocket.on('rematch_accepted', (data) => {
+        console.log('✅ Rematch accepted:', data);
+        setRematchPending(false);
+        setRematchRequested(false);
+        if (data.switchSides) {
+          setPlayerNumber(playerNumber === 1 ? 2 : 1);
+        }
+        if (data.gameState) {
+          setBoard(data.gameState.board);
+          setCurrentPlayer(data.gameState.currentPlayer);
+          setWinner(data.gameState.winner);
+        }
+        if (data.players) {
+          setPlayers(data.players);
+        }
+        setWinningCells([]);
+        setLastMove(null);
+        showMessage('Rematch started!');
+      });
+
+      newSocket.on('rematch_declined', (data) => {
+        console.log('❌ Rematch declined:', data);
+        setRematchPending(false);
+        setRematchRequested(false);
+        showMessage('Rematch declined');
+      });
+
+      newSocket.on('pong', (data) => {
+        // Pong received, connection quality monitoring handles this
+      });
+
       return () => {
         newSocket.close();
       };
@@ -334,6 +371,7 @@ const ConnectFour = () => {
         socketRef.current.close();
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const showMessage = (msg) => {
@@ -517,6 +555,53 @@ const ConnectFour = () => {
 
   const toggleSounds = () => {
     setSoundsEnabled(!soundsEnabled);
+  };
+
+  // Rematch functions
+  const requestRematch = (switchSides = false) => {
+    if (!socket || !gameId) return;
+    
+    setRematchRequested(true);
+    socket.emit('request_rematch', {
+      gameId: gameId,
+      playerId: playerId,
+      switchSides: switchSides
+    });
+  };
+
+  // Touch/Swipe handlers for mobile
+  const handleTouchStart = (e, colIndex) => {
+    if (winner || waitingForPlayer) return;
+    if (playerNumber && playerNumber !== currentPlayer) return;
+    if (board[0][colIndex] !== null) return;
+    
+    setSwipeStart({
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+      col: colIndex
+    });
+  };
+
+  const handleTouchMove = (e) => {
+    if (!swipeStart) return;
+    // Prevent scrolling while swiping on board
+    e.preventDefault();
+  };
+
+  const handleTouchEnd = (e) => {
+    if (!swipeStart) return;
+    
+    const endX = e.changedTouches[0].clientX;
+    const endY = e.changedTouches[0].clientY;
+    const deltaX = endX - swipeStart.x;
+    const deltaY = endY - swipeStart.y;
+    
+    // If it's a tap (small movement), make the move
+    if (Math.abs(deltaX) < 10 && Math.abs(deltaY) < 10) {
+      makeMove(swipeStart.col);
+    }
+    
+    setSwipeStart(null);
   };
 
   if (!gameId) {
