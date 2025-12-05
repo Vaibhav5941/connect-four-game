@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { io } from 'socket.io-client';
 import { Gamepad2, Users, Copy, Check, RefreshCw, Trophy, Sparkles, Wifi, WifiOff } from 'lucide-react';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL;
+// IMPORTANT: Change this to your deployed backend URL
+const SOCKET_URL = 'http://localhost:5000';
 
 const ConnectFour = () => {
   const [socket, setSocket] = useState(null);
@@ -19,85 +19,96 @@ const ConnectFour = () => {
   const [lastMove, setLastMove] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
   const inputRef = useRef(null);
+  const socketRef = useRef(null);
 
   // Initialize Socket.IO connection
   useEffect(() => {
-    const newSocket = io(SOCKET_URL, {
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionAttempts: 5
-    });
+    // Dynamically import socket.io-client
+    import('socket.io-client').then(({ io }) => {
+      const newSocket = io(SOCKET_URL, {
+        transports: ['websocket', 'polling'],
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionAttempts: 10
+      });
 
-    newSocket.on('connect', () => {
-      console.log('Connected to server');
-      setConnected(true);
-    });
+      socketRef.current = newSocket;
 
-    newSocket.on('disconnect', () => {
-      console.log('Disconnected from server');
-      setConnected(false);
-    });
+      newSocket.on('connect', () => {
+        console.log('✅ Connected to server');
+        setConnected(true);
+        setSocket(newSocket);
+      });
 
-    newSocket.on('connected', (data) => {
-      console.log('Server connection confirmed:', data);
-    });
+      newSocket.on('disconnect', () => {
+        console.log('❌ Disconnected from server');
+        setConnected(false);
+      });
 
-    newSocket.on('game_created', (data) => {
-      console.log('Game created:', data);
-    });
+      newSocket.on('connected', (data) => {
+        console.log('Server confirmed:', data);
+      });
 
-    newSocket.on('game_joined', (data) => {
-      console.log('Game joined:', data);
-      if (data.gameState) {
-        setBoard(data.gameState.board);
-        setCurrentPlayer(data.gameState.currentPlayer);
-        setWinner(data.gameState.winner);
-      }
-    });
+      newSocket.on('game_created', (data) => {
+        console.log('🎮 Game created:', data);
+      });
 
-    newSocket.on('player_joined', (data) => {
-      console.log('Another player joined:', data);
-      showMessage('Player 2 joined the game!');
-    });
-
-    newSocket.on('move_made', (data) => {
-      console.log('Move made:', data);
-      setBoard(data.board);
-      setCurrentPlayer(data.currentPlayer);
-      setWinner(data.winner);
-      
-      if (data.lastMove) {
-        setLastMove([data.lastMove.row, data.lastMove.col]);
-      }
-
-      // Check for winner and highlight cells
-      if (data.winner) {
-        const result = checkWinnerLocal(data.board);
-        if (result) {
-          setWinningCells(result.cells);
+      newSocket.on('game_joined', (data) => {
+        console.log('🎮 Game joined:', data);
+        if (data.gameState) {
+          setBoard(data.gameState.board);
+          setCurrentPlayer(data.gameState.currentPlayer);
+          setWinner(data.gameState.winner);
         }
-      }
-    });
+      });
 
-    newSocket.on('game_reset', (data) => {
-      console.log('Game reset:', data);
-      setBoard(data.board);
-      setCurrentPlayer(data.currentPlayer);
-      setWinner(data.winner);
-      setWinningCells([]);
-      setLastMove(null);
-    });
+      newSocket.on('player_joined', (data) => {
+        console.log('👤 Another player joined:', data);
+        showMessage('Player 2 joined the game!');
+      });
 
-    newSocket.on('error', (data) => {
-      console.error('Socket error:', data);
-      showMessage(data.message || 'An error occurred');
-    });
+      newSocket.on('move_made', (data) => {
+        console.log('🎯 Move made:', data);
+        setBoard(data.board);
+        setCurrentPlayer(data.currentPlayer);
+        setWinner(data.winner);
+        
+        if (data.lastMove) {
+          setLastMove([data.lastMove.row, data.lastMove.col]);
+          setTimeout(() => setLastMove(null), 1000);
+        }
 
-    setSocket(newSocket);
+        if (data.winner) {
+          const result = checkWinnerLocal(data.board);
+          if (result) {
+            setWinningCells(result.cells);
+          }
+        }
+      });
+
+      newSocket.on('game_reset', (data) => {
+        console.log('🔄 Game reset:', data);
+        setBoard(data.board);
+        setCurrentPlayer(data.currentPlayer);
+        setWinner(data.winner);
+        setWinningCells([]);
+        setLastMove(null);
+      });
+
+      newSocket.on('error', (data) => {
+        console.error('❌ Socket error:', data);
+        showMessage(data.message || 'An error occurred');
+      });
+
+      return () => {
+        newSocket.close();
+      };
+    });
 
     return () => {
-      newSocket.close();
+      if (socketRef.current) {
+        socketRef.current.close();
+      }
     };
   }, []);
 
@@ -107,7 +118,6 @@ const ConnectFour = () => {
   };
 
   const checkWinnerLocal = (board) => {
-    // Check horizontal
     for (let row = 0; row < 6; row++) {
       for (let col = 0; col < 4; col++) {
         if (board[row][col] && 
@@ -122,7 +132,6 @@ const ConnectFour = () => {
       }
     }
 
-    // Check vertical
     for (let row = 0; row < 3; row++) {
       for (let col = 0; col < 7; col++) {
         if (board[row][col] &&
@@ -137,7 +146,6 @@ const ConnectFour = () => {
       }
     }
 
-    // Check diagonal (down-right)
     for (let row = 0; row < 3; row++) {
       for (let col = 0; col < 4; col++) {
         if (board[row][col] &&
@@ -152,7 +160,6 @@ const ConnectFour = () => {
       }
     }
 
-    // Check diagonal (down-left)
     for (let row = 0; row < 3; row++) {
       for (let col = 3; col < 7; col++) {
         if (board[row][col] &&
@@ -177,7 +184,7 @@ const ConnectFour = () => {
     }
 
     if (winner) {
-      showMessage("Game is over! Click 'New Game' to play again.");
+      showMessage("Game is over!");
       return;
     }
 
@@ -186,13 +193,12 @@ const ConnectFour = () => {
       return;
     }
 
-    // Check if column is full
     if (board[0][col] !== null) {
       showMessage("Column is full!");
       return;
     }
 
-    // Emit move to server
+    console.log('Sending move:', { gameId, col, playerId });
     socket.emit('make_move', {
       gameId: gameId,
       col: col,
@@ -224,7 +230,6 @@ const ConnectFour = () => {
       playerId: playerId
     });
     
-    // Reset local state
     setBoard(Array(6).fill(null).map(() => Array(7).fill(null)));
     setCurrentPlayer(1);
     setWinner(null);
@@ -267,14 +272,12 @@ const ConnectFour = () => {
     return lastMove && lastMove[0] === row && lastMove[1] === col;
   };
 
-  // START SCREEN
   if (!gameId) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center p-4">
         <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iMC4wNSI+PHBhdGggZD0iTTM2IDE2YzAtMi4yMS0xLjc5LTQtNC00cy00IDEuNzktNCA0IDEuNzkgNCA0IDQgNC0xLjc5IDQtNHptMCAwIi8+PC9nPjwvZz48L3N2Zz4=')] opacity-20"></div>
         
         <div className="relative max-w-md w-full">
-          {/* Connection Status */}
           <div className="absolute -top-12 right-0">
             <div className={`flex items-center gap-2 px-4 py-2 rounded-full ${connected ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'} backdrop-blur-xl border ${connected ? 'border-green-400/30' : 'border-red-400/30'}`}>
               {connected ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
@@ -299,7 +302,7 @@ const ConnectFour = () => {
             </div>
 
             {errorMsg && (
-              <div className="mb-4 p-3 bg-red-500/20 border border-red-400/30 rounded-xl text-red-400 text-center text-sm">
+              <div className="mb-4 p-3 bg-red-500/20 border border-red-400/30 rounded-xl text-red-400 text-center text-sm animate-pulse">
                 {errorMsg}
               </div>
             )}
@@ -363,13 +366,11 @@ const ConnectFour = () => {
     );
   }
 
-  // GAME SCREEN
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iMC4wNSI+PHBhdGggZD0iTTM2IDE2YzAtMi4yMS0xLjc5LTQtNC00cy00IDEuNzktNCA0IDEuNzkgNCA0IDQgNC0xLjc5IDQtNHptMCAwIi8+PC9nPjwvZz48L3N2Zz4=')] opacity-20"></div>
       
       <div className="relative max-w-4xl w-full">
-        {/* Connection Status */}
         <div className="absolute -top-12 right-0">
           <div className={`flex items-center gap-2 px-4 py-2 rounded-full ${connected ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'} backdrop-blur-xl border ${connected ? 'border-green-400/30' : 'border-red-400/30'}`}>
             {connected ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
@@ -378,7 +379,6 @@ const ConnectFour = () => {
         </div>
 
         <div className="bg-white/10 backdrop-blur-xl rounded-3xl shadow-2xl p-8 border border-white/20">
-          {/* Header */}
           <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
             <div>
               <h1 className="text-3xl font-bold text-white mb-1 flex items-center gap-2">
@@ -391,7 +391,6 @@ const ConnectFour = () => {
                 <button
                   onClick={copyGameId}
                   className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                  title="Copy Game ID"
                 >
                   {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4 text-blue-300" />}
                 </button>
@@ -407,14 +406,12 @@ const ConnectFour = () => {
             </button>
           </div>
 
-          {/* Error/Info Message */}
           {errorMsg && (
-            <div className="mb-4 p-3 bg-blue-500/20 border border-blue-400/30 rounded-xl text-blue-200 text-center text-sm">
+            <div className="mb-4 p-3 bg-blue-500/20 border border-blue-400/30 rounded-xl text-blue-200 text-center text-sm animate-pulse">
               {errorMsg}
             </div>
           )}
 
-          {/* Game Status */}
           <div className="mb-6 text-center">
             {winner ? (
               <div className="flex items-center justify-center gap-2 text-2xl font-bold">
@@ -441,7 +438,6 @@ const ConnectFour = () => {
             )}
           </div>
 
-          {/* Game Board */}
           <div className="flex justify-center">
             <div className="inline-block bg-gradient-to-br from-blue-600 to-blue-800 p-6 rounded-3xl shadow-2xl">
               <div className="grid grid-cols-7 gap-3">
@@ -485,7 +481,6 @@ const ConnectFour = () => {
             </div>
           </div>
 
-          {/* Player Legend */}
           <div className="mt-6 flex justify-center gap-8">
             <div className={`flex items-center gap-2 ${playerNumber === 1 ? 'ring-2 ring-red-400/50 rounded-full px-4 py-2' : ''}`}>
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-red-400 to-red-600 shadow-lg"></div>
@@ -498,7 +493,6 @@ const ConnectFour = () => {
           </div>
         </div>
 
-        {/* Info Card */}
         <div className="mt-6 bg-white/5 backdrop-blur-xl rounded-2xl p-4 border border-white/10">
           <p className="text-sm text-blue-200 text-center">
             🎮 Connect four pieces in a row (horizontal, vertical, or diagonal) to win!
