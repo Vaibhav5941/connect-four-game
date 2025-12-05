@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Gamepad2, Users, Copy, Check, RefreshCw, Trophy, Sparkles, Wifi, WifiOff, Clock, Volume2, VolumeX, BarChart3, User } from 'lucide-react';
+import { Gamepad2, Users, Copy, Check, RefreshCw, Trophy, Sparkles, Wifi, WifiOff, Clock, Volume2, VolumeX, User, RotateCcw, Signal, SignalLow, SignalMedium, SignalHigh } from 'lucide-react';
 import soundManager from './sounds';
 
 // IMPORTANT: Change this to your deployed backend URL
@@ -33,26 +33,22 @@ const ConnectFour = () => {
   const [moveTimer, setMoveTimer] = useState(30);
   const [timeRemaining, setTimeRemaining] = useState(30);
   const [showNameInput, setShowNameInput] = useState(false);
-  const [showStats, setShowStats] = useState(false);
   const [waitingForPlayer, setWaitingForPlayer] = useState(false);
   const [soundsEnabled, setSoundsEnabled] = useState(() => {
     const stored = localStorage.getItem('soundsEnabled');
     return stored !== 'false';
   });
-  const [stats, setStats] = useState(() => {
-    const stored = localStorage.getItem('gameStats');
-    return stored ? JSON.parse(stored) : { wins: 0, losses: 0, draws: 0, gamesPlayed: 0 };
-  });
   const [animatingCells, setAnimatingCells] = useState(new Set());
+  const [connectionQuality, setConnectionQuality] = useState('good'); // 'poor', 'fair', 'good', 'excellent'
+  const [reconnecting, setReconnecting] = useState(false);
+  const [gameState, setGameState] = useState(null); // Store game state for reconnection
+  const [rematchRequested, setRematchRequested] = useState(false);
+  const [rematchPending, setRematchPending] = useState(false);
+  const [swipeStart, setSwipeStart] = useState(null);
   const inputRef = useRef(null);
   const socketRef = useRef(null);
   const timerRef = useRef(null);
   const nameInputRef = useRef(null);
-
-  // Load and save stats
-  useEffect(() => {
-    localStorage.setItem('gameStats', JSON.stringify(stats));
-  }, [stats]);
 
   useEffect(() => {
     localStorage.setItem('playerId', playerId);
@@ -123,12 +119,56 @@ const ConnectFour = () => {
       newSocket.on('connect', () => {
         console.log('✅ Connected to server');
         setConnected(true);
+        setReconnecting(false);
         setSocket(newSocket);
+        
+        // Recover game state if reconnecting
+        if (gameState && gameId) {
+          if (playerNumber === 1) {
+            newSocket.emit('create_game', {
+              gameId: gameId,
+              playerId: playerId,
+              playerName: playerName
+            });
+          } else if (playerNumber === 2) {
+            newSocket.emit('join_game', {
+              gameId: gameId,
+              playerId: playerId,
+              playerName: playerName
+            });
+          }
+        }
+        
+        // Monitor connection quality
+        monitorConnectionQuality(newSocket);
       });
 
       newSocket.on('disconnect', () => {
         console.log('❌ Disconnected from server');
         setConnected(false);
+        setConnectionQuality('poor');
+      });
+
+      newSocket.on('reconnect', (attemptNumber) => {
+        console.log(`🔄 Reconnecting... (attempt ${attemptNumber})`);
+        setReconnecting(true);
+      });
+
+      newSocket.on('reconnect_attempt', (attemptNumber) => {
+        console.log(`🔄 Reconnection attempt ${attemptNumber}`);
+        setReconnecting(true);
+      });
+
+      newSocket.on('reconnect_error', (error) => {
+        console.log('❌ Reconnection error:', error);
+        setReconnecting(true);
+      });
+
+      newSocket.on('reconnect_failed', () => {
+        console.log('❌ Reconnection failed');
+        setReconnecting(false);
+        setConnectionQuality('poor');
+        showMessage('Connection lost. Please refresh the page.');
       });
 
       newSocket.on('connected', (data) => {
@@ -146,6 +186,7 @@ const ConnectFour = () => {
           setPlayers(data.players);
         }
         setWaitingForPlayer(true);
+        setGameState(data.gameState);
         soundManager.playJoin();
       });
 
@@ -160,6 +201,7 @@ const ConnectFour = () => {
           setPlayers(data.players);
         }
         setWaitingForPlayer(false);
+        setGameState(data.gameState);
         soundManager.playJoin();
       });
 
@@ -177,6 +219,7 @@ const ConnectFour = () => {
           setPlayers(data.players);
         }
         setWaitingForPlayer(false);
+        setGameState(data.gameState);
         soundManager.playJoin();
       });
 
@@ -212,13 +255,7 @@ const ConnectFour = () => {
           if (result) {
             setWinningCells(result.cells);
           }
-          // Update stats
-          if (data.winner === playerNumber) {
-            setStats(prev => ({ ...prev, wins: prev.wins + 1, gamesPlayed: prev.gamesPlayed + 1 }));
-            soundManager.playWin();
-          } else if (data.winner) {
-            setStats(prev => ({ ...prev, losses: prev.losses + 1, gamesPlayed: prev.gamesPlayed + 1 }));
-          }
+          soundManager.playWin();
         } else {
           soundManager.playMove();
         }
@@ -434,6 +471,44 @@ const ConnectFour = () => {
     setSoundsEnabled(!soundsEnabled);
   };
 
+  // Monitor connection quality
+  const monitorConnectionQuality = (socket) => {
+    let pingCount = 0;
+    let pings = [];
+    
+    const checkPing = () => {
+      if (!socket || !socket.connected) return;
+      
+      const startTime = Date.now();
+      socket.emit('ping', { timestamp: startTime }, (response) => {
+        if (response && response.timestamp) {
+          const latency = Date.now() - startTime;
+          pings.push(latency);
+          if (pings.length > 10) pings.shift();
+          
+          const avgLatency = pings.reduce((a, b) => a + b, 0) / pings.length;
+          
+          if (avgLatency < 50) {
+            setConnectionQuality('excellent');
+          } else if (avgLatency < 100) {
+            setConnectionQuality('good');
+          } else if (avgLatency < 200) {
+            setConnectionQuality('fair');
+          } else {
+            setConnectionQuality('poor');
+          }
+        }
+      });
+      
+      pingCount++;
+      if (pingCount < 100 && socket.connected) {
+        setTimeout(checkPing, 2000);
+      }
+    };
+    
+    setTimeout(checkPing, 1000);
+  };
+
   if (!gameId) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center p-4">
@@ -509,12 +584,6 @@ const ConnectFour = () => {
                 <span className="text-blue-200">Playing as:</span>
                 <span className="text-white font-semibold">{playerName}</span>
               </div>
-              <div className="flex items-center justify-between text-sm mt-2">
-                <span className="text-blue-200">Stats:</span>
-                <span className="text-white">
-                  {stats.wins}W / {stats.losses}L / {stats.gamesPlayed}G
-                </span>
-              </div>
             </div>
 
             <div className="space-y-4">
@@ -581,10 +650,27 @@ const ConnectFour = () => {
       <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iMC4wNSI+PHBhdGggZD0iTTM2IDE2YzAtMi4yMS0xLjc5LTQtNC00cy00IDEuNzktNCA0IDEuNzkgNCA0IDQgNC0xLjc5IDQtNHptMCAwIi8+PC9nPjwvZz48L3N2Zz4=')] opacity-20"></div>
       
       <div className="relative max-w-4xl w-full">
-        <div className="absolute -top-12 right-0">
+        <div className="absolute -top-12 right-0 flex flex-col sm:flex-row gap-2">
+          {reconnecting && (
+            <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-yellow-500/20 text-yellow-400 backdrop-blur-xl border border-yellow-400/30">
+              <div className="animate-spin rounded-full h-3 w-3 border-2 border-yellow-400 border-t-transparent"></div>
+              <span className="text-xs font-semibold">Reconnecting...</span>
+            </div>
+          )}
           <div className={`flex items-center gap-2 px-4 py-2 rounded-full ${connected ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'} backdrop-blur-xl border ${connected ? 'border-green-400/30' : 'border-red-400/30'}`}>
-            {connected ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
-            <span className="text-xs font-semibold">{connected ? 'Connected' : 'Disconnected'}</span>
+            {connected ? (
+              <>
+                {connectionQuality === 'excellent' && <SignalHigh className="w-4 h-4" />}
+                {connectionQuality === 'good' && <Signal className="w-4 h-4" />}
+                {connectionQuality === 'fair' && <SignalMedium className="w-4 h-4" />}
+                {(connectionQuality === 'poor' || !connectionQuality) && <SignalLow className="w-4 h-4" />}
+              </>
+            ) : (
+              <WifiOff className="w-4 h-4" />
+            )}
+            <span className="text-xs font-semibold">
+              {connected ? (connectionQuality === 'poor' ? 'Poor Connection' : 'Connected') : 'Disconnected'}
+            </span>
           </div>
         </div>
 
@@ -624,11 +710,36 @@ const ConnectFour = () => {
 
           <div className="mb-6 text-center">
             {winner ? (
-              <div className="flex items-center justify-center gap-2 text-2xl font-bold">
-                <Trophy className="w-8 h-8 text-yellow-400 animate-bounce" />
-                <span className={winner === 1 ? "text-red-400" : "text-yellow-400"}>
-                  {players[winner]?.name || `Player ${winner}`} Wins! 🎉
-                </span>
+              <div className="space-y-4">
+                <div className="flex items-center justify-center gap-2 text-2xl font-bold">
+                  <Trophy className="w-8 h-8 text-yellow-400 animate-bounce" />
+                  <span className={winner === 1 ? "text-red-400" : "text-yellow-400"}>
+                    {players[winner]?.name || `Player ${winner}`} Wins! 🎉
+                  </span>
+                </div>
+                {!rematchPending && (
+                  <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
+                    <button
+                      onClick={() => requestRematch(false)}
+                      className="flex items-center gap-2 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white px-6 py-3 rounded-xl font-semibold transition-all transform hover:scale-105 shadow-lg"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      Rematch
+                    </button>
+                    <button
+                      onClick={() => requestRematch(true)}
+                      className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-xl font-semibold transition-all border border-white/20"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      Rematch & Switch Sides
+                    </button>
+                  </div>
+                )}
+                {rematchPending && (
+                  <div className="text-blue-200 text-sm">
+                    Waiting for opponent to accept rematch...
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-2">
@@ -657,8 +768,11 @@ const ConnectFour = () => {
           </div>
 
           <div className="flex justify-center">
-            <div className="inline-block bg-gradient-to-br from-blue-600 to-blue-800 p-6 rounded-3xl shadow-2xl">
-              <div className="grid grid-cols-7 gap-3">
+            <div 
+              className="inline-block bg-gradient-to-br from-blue-600 to-blue-800 p-4 sm:p-6 rounded-3xl shadow-2xl touch-none"
+              onTouchMove={handleTouchMove}
+            >
+              <div className="grid grid-cols-7 gap-2 sm:gap-3">
                 {board.map((row, rowIndex) =>
                   row.map((cell, colIndex) => (
                     <div
@@ -666,12 +780,14 @@ const ConnectFour = () => {
                       className="relative"
                       onMouseEnter={() => !winner && setHoveredCol(colIndex)}
                       onMouseLeave={() => setHoveredCol(null)}
+                      onTouchStart={(e) => handleTouchStart(e, colIndex)}
+                      onTouchEnd={handleTouchEnd}
                     >
                       <button
                         onClick={() => makeMove(colIndex)}
                         disabled={winner || (playerNumber && playerNumber !== currentPlayer) || waitingForPlayer}
-                        className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full transition-all duration-300 ${
-                          !cell ? 'bg-white/90 hover:bg-white shadow-inner' : ''
+                        className={`w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 rounded-full transition-all duration-300 touch-manipulation ${
+                          !cell ? 'bg-white/90 hover:bg-white active:bg-white shadow-inner' : ''
                         } ${
                           hoveredCol === colIndex && !winner && (!playerNumber || playerNumber === currentPlayer) && !cell && !waitingForPlayer
                             ? 'ring-4 ring-white/50 transform scale-110'
@@ -730,13 +846,6 @@ const ConnectFour = () => {
               title={soundsEnabled ? 'Disable sounds' : 'Enable sounds'}
             >
               {soundsEnabled ? <Volume2 className="w-4 h-4 text-white" /> : <VolumeX className="w-4 h-4 text-white" />}
-            </button>
-            <button
-              onClick={() => setShowStats(!showStats)}
-              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 backdrop-blur-xl border border-white/20 transition-all"
-              title="View statistics"
-            >
-              <BarChart3 className="w-4 h-4 text-white" />
             </button>
           </div>
 

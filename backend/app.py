@@ -215,6 +215,70 @@ def handle_reset(data):
             'winner': games[game_id]['winner']
         }, room=game_id, include_self=True)
 
+@socketio.on('request_rematch')
+def handle_rematch_request(data):
+    game_id = data['gameId']
+    player_id = data['playerId']
+    switch_sides = data.get('switchSides', False)
+    
+    if game_id not in games:
+        emit('error', {'message': 'Game not found'})
+        return
+    
+    game = games[game_id]
+    
+    # Find player number
+    player_number = None
+    for num, player_info in game['players'].items():
+        if player_info['id'] == player_id:
+            player_number = num
+            break
+    
+    if player_number is None:
+        emit('error', {'message': 'You are not in this game'})
+        return
+    
+    # Notify other player
+    emit('rematch_requested', {
+        'playerName': game['players'][player_number]['name'],
+        'switchSides': switch_sides
+    }, room=game_id, skip_sid=request.sid)
+    
+    # If both players want rematch, reset game
+    if switch_sides:
+        # Switch player numbers
+        temp = game['players'][1]
+        game['players'][1] = game['players'][2]
+        game['players'][2] = temp
+    
+    # Reset game
+    games[game_id]['board'] = [[None for _ in range(7)] for _ in range(6)]
+    games[game_id]['currentPlayer'] = 1
+    games[game_id]['winner'] = None
+    
+    # Get player names
+    players_info = {
+        1: {'name': game['players'][1]['name']},
+        2: {'name': game['players'][2]['name']}
+    }
+    
+    # Notify both players
+    emit('rematch_accepted', {
+        'switchSides': switch_sides,
+        'players': players_info,
+        'gameState': {
+            'board': games[game_id]['board'],
+            'currentPlayer': games[game_id]['currentPlayer'],
+            'winner': games[game_id]['winner']
+        }
+    }, room=game_id, include_self=True)
+    
+    print(f'🔄 Rematch accepted for game: {game_id}')
+
+@socketio.on('ping')
+def handle_ping(data):
+    emit('pong', {'timestamp': data.get('timestamp')})
+
 def check_winner(board):
     """Check all possible winning conditions"""
     
