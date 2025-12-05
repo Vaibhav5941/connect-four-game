@@ -960,31 +960,7 @@ const ConnectFour = () => {
             </button>
           </div>
 
-          {showStats && (
-            <div className="mt-4 p-4 bg-white/10 border border-white/20 rounded-xl">
-              <h3 className="text-white font-semibold mb-3 text-center">Statistics</h3>
-              <div className="grid grid-cols-2 gap-4 text-center">
-                <div>
-                  <div className="text-2xl font-bold text-green-400">{stats.wins}</div>
-                  <div className="text-xs text-blue-200">Wins</div>
-                </div>
-                <div>
-                  <div className="text-2xl font-bold text-red-400">{stats.losses}</div>
-                  <div className="text-xs text-blue-200">Losses</div>
-                </div>
-                <div>
-                  <div className="text-2xl font-bold text-blue-400">{stats.gamesPlayed}</div>
-                  <div className="text-xs text-blue-200">Games</div>
-                </div>
-                <div>
-                  <div className="text-2xl font-bold text-yellow-400">
-                    {stats.gamesPlayed > 0 ? Math.round((stats.wins / stats.gamesPlayed) * 100) : 0}%
-                  </div>
-                  <div className="text-xs text-blue-200">Win Rate</div>
-                </div>
-              </div>
-            </div>
-          )}
+         
         </div>
 
         <div className="mt-6 bg-white/5 backdrop-blur-xl rounded-2xl p-4 border border-white/10">
