@@ -6,7 +6,7 @@ import json
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-change-this'
 CORS(app, resources={r"/*": {"origins": "*"}})
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Store game states
 games = {}
