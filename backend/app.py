@@ -1,6 +1,7 @@
 from flask import Flask, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_cors import CORS
+import time
 
 
 
@@ -33,13 +34,16 @@ def handle_disconnect():
 def handle_create_game(data):
     game_id = data['gameId']
     player_id = data['playerId']
+    player_name = data.get('playerName', f'Player {player_id[:6]}')
     
     games[game_id] = {
         'board': [[None for _ in range(7)] for _ in range(6)],
         'currentPlayer': 1,
-        'players': {1: player_id},
+        'players': {1: {'id': player_id, 'name': player_name}},
         'winner': None,
-        'room_members': [request.sid]
+        'room_members': [request.sid],
+        'moveTimer': None,
+        'moveStartTime': None
     }
     
     join_room(game_id)
@@ -48,18 +52,21 @@ def handle_create_game(data):
     emit('game_created', {
         'gameId': game_id,
         'playerNumber': 1,
+        'playerName': player_name,
         'gameState': {
             'board': games[game_id]['board'],
             'currentPlayer': games[game_id]['currentPlayer'],
             'winner': games[game_id]['winner']
-        }
+        },
+        'players': {1: {'name': player_name}}
     })
-    print(f'🎮 Game created: {game_id} by {player_id}')
+    print(f'🎮 Game created: {game_id} by {player_name}')
 
 @socketio.on('join_game')
 def handle_join_game(data):
     game_id = data['gameId']
     player_id = data['playerId']
+    player_name = data.get('playerName', f'Player {player_id[:6]}')
     
     print(f'🔍 Attempting to join game: {game_id}')
     print(f'📋 Available games: {list(games.keys())}')
@@ -74,31 +81,41 @@ def handle_join_game(data):
         emit('error', {'message': 'Game is full. Maximum 2 players allowed.'})
         return
     
-    games[game_id]['players'][2] = player_id
+    games[game_id]['players'][2] = {'id': player_id, 'name': player_name}
     games[game_id]['room_members'].append(request.sid)
     join_room(game_id)
+    
+    # Get player names for response
+    players_info = {
+        1: {'name': games[game_id]['players'][1]['name']},
+        2: {'name': player_name}
+    }
     
     # Send game state to the joining player (Player 2)
     emit('game_joined', {
         'gameId': game_id,
         'playerNumber': 2,
+        'playerName': player_name,
         'gameState': {
             'board': games[game_id]['board'],
             'currentPlayer': games[game_id]['currentPlayer'],
             'winner': games[game_id]['winner']
-        }
+        },
+        'players': players_info
     })
     
     # Notify Player 1 with full game state to ensure synchronization
     emit('player_joined', {
         'playerNumber': 2,
+        'playerName': player_name,
         'gameState': {
             'board': games[game_id]['board'],
             'currentPlayer': games[game_id]['currentPlayer'],
             'winner': games[game_id]['winner']
-        }
+        },
+        'players': players_info
     }, room=game_id, skip_sid=request.sid)
-    print(f'✅ Player 2 joined game: {game_id}')
+    print(f'✅ Player 2 ({player_name}) joined game: {game_id}')
 
 @socketio.on('make_move')
 def handle_move(data):
@@ -122,8 +139,8 @@ def handle_move(data):
     
     # Verify it's the player's turn
     player_number = None
-    for num, pid in game['players'].items():
-        if pid == player_id:
+    for num, player_info in game['players'].items():
+        if player_info['id'] == player_id:
             player_number = num
             break
     
@@ -164,13 +181,21 @@ def handle_move(data):
     
     # Switch player
     game['currentPlayer'] = 2 if game['currentPlayer'] == 1 else 1
+    game['moveStartTime'] = time.time() if 'time' in __builtins__ else None
+    
+    # Get player names
+    players_info = {
+        1: {'name': game['players'][1]['name']},
+        2: {'name': game['players'][2]['name']}
+    }
     
     # Broadcast move to ALL players in the room
     emit('move_made', {
         'board': game['board'],
         'currentPlayer': game['currentPlayer'],
         'winner': game['winner'],
-        'lastMove': {'row': row_played, 'col': col}
+        'lastMove': {'row': row_played, 'col': col},
+        'players': players_info
     }, room=game_id, include_self=True)
 
 @socketio.on('reset_game')
