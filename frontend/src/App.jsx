@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { Gamepad2, Users, Copy, Check, RefreshCw, Trophy, Sparkles, Wifi, WifiOff } from 'lucide-react';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL;
 
 const ConnectFour = () => {
   const [socket, setSocket] = useState(null);
