@@ -103,6 +103,54 @@ const ConnectFour = () => {
     };
   }, [currentPlayer, playerNumber, winner, gameId, waitingForPlayer, connected, moveTimer]);
 
+  // Monitor connection quality function (must be defined before useEffect)
+  const monitorConnectionQuality = (socket) => {
+    if (!socket) return;
+    
+    let pingCount = 0;
+    let pings = [];
+    let timeoutId = null;
+    
+    const checkPing = () => {
+      if (!socket || !socket.connected) {
+        if (timeoutId) clearTimeout(timeoutId);
+        return;
+      }
+      
+      const startTime = Date.now();
+      socket.emit('ping', { timestamp: startTime }, (response) => {
+        if (response && response.timestamp) {
+          const latency = Date.now() - startTime;
+          pings.push(latency);
+          if (pings.length > 10) pings.shift();
+          
+          const avgLatency = pings.reduce((a, b) => a + b, 0) / pings.length;
+          
+          if (avgLatency < 50) {
+            setConnectionQuality('excellent');
+          } else if (avgLatency < 100) {
+            setConnectionQuality('good');
+          } else if (avgLatency < 200) {
+            setConnectionQuality('fair');
+          } else {
+            setConnectionQuality('poor');
+          }
+        }
+      });
+      
+      pingCount++;
+      if (pingCount < 100 && socket.connected) {
+        timeoutId = setTimeout(checkPing, 2000);
+      }
+    };
+    
+    timeoutId = setTimeout(checkPing, 1000);
+    
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  };
+
   // Initialize Socket.IO connection
   useEffect(() => {
     // Dynamically import socket.io-client
@@ -469,44 +517,6 @@ const ConnectFour = () => {
 
   const toggleSounds = () => {
     setSoundsEnabled(!soundsEnabled);
-  };
-
-  // Monitor connection quality
-  const monitorConnectionQuality = (socket) => {
-    let pingCount = 0;
-    let pings = [];
-    
-    const checkPing = () => {
-      if (!socket || !socket.connected) return;
-      
-      const startTime = Date.now();
-      socket.emit('ping', { timestamp: startTime }, (response) => {
-        if (response && response.timestamp) {
-          const latency = Date.now() - startTime;
-          pings.push(latency);
-          if (pings.length > 10) pings.shift();
-          
-          const avgLatency = pings.reduce((a, b) => a + b, 0) / pings.length;
-          
-          if (avgLatency < 50) {
-            setConnectionQuality('excellent');
-          } else if (avgLatency < 100) {
-            setConnectionQuality('good');
-          } else if (avgLatency < 200) {
-            setConnectionQuality('fair');
-          } else {
-            setConnectionQuality('poor');
-          }
-        }
-      });
-      
-      pingCount++;
-      if (pingCount < 100 && socket.connected) {
-        setTimeout(checkPing, 2000);
-      }
-    };
-    
-    setTimeout(checkPing, 1000);
   };
 
   if (!gameId) {
