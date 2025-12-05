@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Gamepad2, Users, Copy, Check, RefreshCw, Trophy, Sparkles, Wifi, WifiOff } from 'lucide-react';
 
 // IMPORTANT: Change this to your deployed backend URL
-const SOCKET_URL = 'http://localhost:5000';
+const SOCKET_URL = 'https://connect-four-game-mzys.onrender.com';
 
 const ConnectFour = () => {
   const [socket, setSocket] = useState(null);
