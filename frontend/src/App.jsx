@@ -2,7 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Gamepad2, Users, Copy, Check, RefreshCw, Trophy, Sparkles, Wifi, WifiOff } from 'lucide-react';
 
 // IMPORTANT: Change this to your deployed backend URL
-const SOCKET_URL = 'https://connect-four-game-mzys.onrender.com';
+// For local testing, use: 'http://localhost:5000'
+const SOCKET_URL = process.env.NODE_ENV === 'production' 
+  ? 'https://connect-four-game-mzys.onrender.com'
+  : 'http://localhost:5000';
 
 const ConnectFour = () => {
   const [socket, setSocket] = useState(null);
@@ -51,6 +54,11 @@ const ConnectFour = () => {
 
       newSocket.on('game_created', (data) => {
         console.log('🎮 Game created:', data);
+        if (data.gameState) {
+          setBoard(data.gameState.board);
+          setCurrentPlayer(data.gameState.currentPlayer);
+          setWinner(data.gameState.winner);
+        }
       });
 
       newSocket.on('game_joined', (data) => {
@@ -65,6 +73,12 @@ const ConnectFour = () => {
       newSocket.on('player_joined', (data) => {
         console.log('👤 Another player joined:', data);
         showMessage('Player 2 joined the game!');
+        // Update game state when player 2 joins to ensure synchronization
+        if (data.gameState) {
+          setBoard(data.gameState.board);
+          setCurrentPlayer(data.gameState.currentPlayer);
+          setWinner(data.gameState.winner);
+        }
       });
 
       newSocket.on('move_made', (data) => {
@@ -225,11 +239,13 @@ const ConnectFour = () => {
     setGameId(newGameId);
     setPlayerNumber(1);
     
+    // Don't reset board locally - wait for server to send the state
     socket.emit('create_game', {
       gameId: newGameId,
       playerId: playerId
     });
     
+    // Reset local state, but server will send the actual state
     setBoard(Array(6).fill(null).map(() => Array(7).fill(null)));
     setCurrentPlayer(1);
     setWinner(null);

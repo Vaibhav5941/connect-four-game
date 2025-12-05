@@ -43,7 +43,17 @@ def handle_create_game(data):
     }
     
     join_room(game_id)
-    emit('game_created', {'gameId': game_id, 'playerNumber': 1})
+    
+    # Send full game state to Player 1
+    emit('game_created', {
+        'gameId': game_id,
+        'playerNumber': 1,
+        'gameState': {
+            'board': games[game_id]['board'],
+            'currentPlayer': games[game_id]['currentPlayer'],
+            'winner': games[game_id]['winner']
+        }
+    })
     print(f'🎮 Game created: {game_id} by {player_id}')
 
 @socketio.on('join_game')
@@ -68,7 +78,7 @@ def handle_join_game(data):
     games[game_id]['room_members'].append(request.sid)
     join_room(game_id)
     
-    # Send game state to the joining player
+    # Send game state to the joining player (Player 2)
     emit('game_joined', {
         'gameId': game_id,
         'playerNumber': 2,
@@ -79,8 +89,15 @@ def handle_join_game(data):
         }
     })
     
-    # Notify the other player
-    emit('player_joined', {'playerNumber': 2}, room=game_id, skip_sid=request.sid)
+    # Notify Player 1 with full game state to ensure synchronization
+    emit('player_joined', {
+        'playerNumber': 2,
+        'gameState': {
+            'board': games[game_id]['board'],
+            'currentPlayer': games[game_id]['currentPlayer'],
+            'winner': games[game_id]['winner']
+        }
+    }, room=game_id, skip_sid=request.sid)
     print(f'✅ Player 2 joined game: {game_id}')
 
 @socketio.on('make_move')
@@ -96,6 +113,12 @@ def handle_move(data):
         return
     
     game = games[game_id]
+    
+    # Check if both players have joined
+    if len(game['players']) < 2:
+        print(f'❌ Waiting for second player')
+        emit('error', {'message': 'Waiting for second player to join'})
+        return
     
     # Verify it's the player's turn
     player_number = None
